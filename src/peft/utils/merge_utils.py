@@ -217,7 +217,7 @@ def ties(
 
 #### Todo: Add new methods, reuse modules in other algorithms ####
 #### e.g. if you want to implement “sce” algorithm ####
-"""
+
 def sce(
     task_tensors: List[torch.Tensor],
     density: float = 1.0,
@@ -257,7 +257,29 @@ def sce(
 
     ## Normalize the merged tensor by the sum of weights at each parameter position. Use clamp(min=1e-6) to avoid division by zero when all weights are erased.
 
-    return
+    task_tensors = torch.stack(task_tensors, dim=0)  # [T, ..., ...]
+
+    # Step 1: Apply variance-based selection mask (S step)
+    mask = sce_mask(task_tensors, density, mask_dtype=task_tensors.dtype)
+
+    # Step 2: Compute majority sign agreement mask (E step)
+    majority_sign_mask = calculate_majority_sign_mask(task_tensors, method=majority_sign_method)
+
+    # Step 3: Combine masks to erase minority/low-variance elements
+    final_mask = mask * majority_sign_mask  # shape = [T, ...]
+
+    # Step 4: Compute weights per task (C step)
+    weights = sce_weight(task_tensors)  # shape = [T]
+    weights = reshape_weight_task_tensors(task_tensors, weights)  # shape = [T, 1, 1...]
+
+    # Step 5: Weighted masked summation
+    masked_tensors = task_tensors * final_mask * weights
+    summed = masked_tensors.sum(dim=0)
+
+    # Step 6: Normalize (avoid divide-by-zero)
+    norm = (final_mask * weights).sum(dim=0).clamp(min=1e-6)
+    return summed / norm
+
     
 def sce_weight(task_tensors: torch.Tensor) -> torch.Tensor:
 	# Implementation of C step
@@ -305,7 +327,7 @@ def sce_mask(task_tensors: torch.Tensor, density: float, mask_dtype: Optional[to
     mask.view(-1)[indices] = 1
     return mask
 
-"""
+
 
 
 def dare_linear(task_tensors: List[torch.Tensor], weights: torch.Tensor, density: float) -> torch.Tensor:
